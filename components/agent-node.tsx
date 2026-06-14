@@ -6,7 +6,8 @@ const accentByAgent: Record<AgentCode, string> = {
   FIELD: "border-cyanline/50 text-cyanline",
   FLOW: "border-copper/60 text-[#ffc28d]",
   BASE: "border-platinum/30 text-platinum",
-  KPI: "border-[#b9a8ff]/60 text-[#d5ccff]"
+  KPI: "border-[#b9a8ff]/60 text-[#d5ccff]",
+  LEAD: "border-signal/70 text-signal"
 };
 
 interface AgentNodeProps {

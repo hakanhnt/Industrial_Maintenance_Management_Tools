@@ -10,12 +10,12 @@ import {
   Radar,
   Send,
   ShieldCheck,
-  Sparkles,
   Users
 } from "lucide-react";
 import { AgentNode } from "@/components/agent-node";
 import { AgentResponseCard } from "@/components/agent-response-card";
 import { StatusPill } from "@/components/status-pill";
+import { leadAgentProfile } from "@/lib/agents/profiles";
 import type {
   AgentCode,
   AgentProfile,
@@ -311,7 +311,7 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
                   Multi-Agent Dialogue
                 </p>
                 <h2 className="mt-2 text-xl font-semibold text-platinum">
-                  CORE → FIELD → FLOW → BASE → KPI
+                  CORE → FIELD → FLOW → BASE → KPI → LEAD
                 </h2>
               </div>
               <StatusPill tone={response?.status === "grounded" ? "ready" : "muted"}>
@@ -319,8 +319,8 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
               </StatusPill>
             </div>
 
-            <div className="mt-5 grid gap-3 lg:grid-cols-5">
-              {agents.map((agent, index) => (
+            <div className="mt-5 grid gap-3 lg:grid-cols-6">
+              {agents.map((agent) => (
                 <div key={agent.code} className="flex min-w-0 items-center gap-3 lg:block">
                   <AgentNode
                     code={agent.code}
@@ -339,11 +339,26 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
                     )}
                     working={isLoading && activeAgentCode === agent.code}
                   />
-                  {index < agents.length - 1 && (
-                    <ArrowRight className="size-4 shrink-0 text-muted lg:mx-auto lg:my-3 lg:rotate-90" />
-                  )}
+                  <ArrowRight className="size-4 shrink-0 text-muted lg:mx-auto lg:my-3 lg:rotate-90" />
                 </div>
               ))}
+              <div className="flex min-w-0 items-center gap-3 lg:block">
+                <AgentNode
+                  code="LEAD"
+                  label={leadAgentProfile.name}
+                  active={Boolean(
+                    response?.turns.some(
+                      (turn) => turn.agent.code === "LEAD" && turn.status !== "skipped"
+                    )
+                  )}
+                  skipped={Boolean(
+                    response?.turns.some(
+                      (turn) => turn.agent.code === "LEAD" && turn.status === "skipped"
+                    )
+                  )}
+                  working={isLoading && activeAgentCode === "LEAD"}
+                />
+              </div>
             </div>
           </div>
 
@@ -364,17 +379,6 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
                 </div>
               ) : (
                 <>
-                  {response.executiveSummary && (
-                    <div className="glass-panel rounded-lg p-5">
-                      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-muted">
-                        <Sparkles className="size-3.5 text-signal" />
-                        Yönetici Özeti
-                      </div>
-                      <p className="mt-3 text-sm leading-7 text-[#ded8cc]">
-                        {response.executiveSummary}
-                      </p>
-                    </div>
-                  )}
                   {answeredTurns.map((turn) => (
                     <AgentResponseCard key={turn.agent.code} turn={turn} />
                   ))}

@@ -128,6 +128,9 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
     }
 
     setError(event.message);
+    setResponse((current) =>
+      current && current.turns.length === 0 && !current.executiveSummary ? null : current
+    );
   }
 
   async function submitQuestion() {

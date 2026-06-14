@@ -27,6 +27,28 @@ function hasUsableEvidence(chunks: ReferenceChunk[]) {
   return chunks.length > 0 && !hasOnlyBootstrapEvidence(chunks);
 }
 
+function truncateForSummary(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength).trim()}...`;
+}
+
+function buildWebSummary(agent: AgentProfile, evidence: ReferenceChunk[]): string {
+  const points = evidence
+    .slice(0, 3)
+    .map((chunk) => `${chunk.title}: ${truncateForSummary(chunk.text, 240)}`)
+    .join(" ");
+
+  return [
+    `${agent.code}: Kayıtlı bilgi tabanında bu soruyla doğrudan eşleşen kanıt bulunamadı,`,
+    `bu nedenle web kaynaklarından derlenen bilgiler özetlendi.`,
+    points,
+    "[Diyagram Önerisi: Web kaynaklı kanıt değerlendirme akışı]"
+  ].join(" ");
+}
+
 function fallbackTurn(
   agent: AgentProfile,
   question: string,
@@ -225,6 +247,9 @@ export async function* runMaintenanceAgentsStream(
       );
 
       if (webEvidence.length > 0) {
+        evidence = webEvidence;
+        usedWebFallback = true;
+
         try {
           const webContent = await generateAgentContent(
             agent,
@@ -232,12 +257,7 @@ export async function* runMaintenanceAgentsStream(
             turns,
             webEvidence
           );
-
-          if (!isInsufficientContent(webContent)) {
-            evidence = webEvidence;
-            content = webContent;
-            usedWebFallback = true;
-          }
+          content = isInsufficientContent(webContent) ? null : webContent;
         } catch {
           content = null;
         }
@@ -245,8 +265,12 @@ export async function* runMaintenanceAgentsStream(
     }
 
     if (isInsufficientContent(content)) {
-      content = null;
-      evidence = [];
+      if (usedWebFallback && evidence.length > 0) {
+        content = buildWebSummary(agent, evidence);
+      } else {
+        content = null;
+        evidence = [];
+      }
     }
 
     const finalContent = content ?? fallbackTurn(agent, normalizedQuestion, evidence, turns);

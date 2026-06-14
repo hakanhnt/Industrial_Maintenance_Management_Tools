@@ -1,4 +1,4 @@
-import type { AgentProfile, ReferenceChunk } from "@/lib/models/maintenance";
+import type { AgentProfile, ConversationHistoryEntry, ReferenceChunk } from "@/lib/models/maintenance";
 import { truncateText } from "@/lib/agents/text-utils";
 
 interface GenerateAgentTurnInput {
@@ -6,6 +6,7 @@ interface GenerateAgentTurnInput {
   question: string;
   previousTurns: Array<{ code: string; content: string }>;
   evidence: ReferenceChunk[];
+  conversationHistory?: ConversationHistoryEntry[];
 }
 
 interface MiniMaxChoice {
@@ -81,6 +82,21 @@ function trimToCompleteSentence(value: string) {
 
 function wasTruncated(data: MiniMaxResponse) {
   return data.choices?.some((choice) => choice.finish_reason === "length") ?? false;
+}
+
+function buildHistoryBlock(history?: ConversationHistoryEntry[]): string {
+  if (!history || history.length === 0) {
+    return "";
+  }
+
+  const rounds = history
+    .map(
+      (entry, index) =>
+        `Tur ${index + 1} - Soru: ${entry.question}\nTur ${index + 1} - Yönetici Cevabı: ${entry.leadAnswer}`
+    )
+    .join("\n\n");
+
+  return `\n\nÖnceki konuşma geçmişi:\n${rounds}\n\nYukarıdaki geçmişi takip sorusu için bağlam olarak kullan.`;
 }
 
 async function requestMiniMaxCompletion(
@@ -159,18 +175,19 @@ export async function generateMiniMaxAgentTurn(input: GenerateAgentTurnInput) {
     "Gerektiğinde tam olarak şu biçimde diyagram etiketi bırak: [Diyagram Önerisi: kısa açıklama]"
   ].join("\n");
 
-  const userPrompt = [
-    `Kod adın: ${input.agent.code}. Rolün: ${input.agent.role}`,
-    `Guardrail: ${input.agent.guardrail}`,
-    "",
-    `Kullanıcı sorusu: ${input.question}`,
-    "",
-    `Önceki ajan konuşmaları:\n${previousText || "Yok"}`,
-    "",
-    `Kanıt parçaları:\n${evidenceText || "Kanıt bulunamadı."}`,
-    "",
-    "Yanıtını en fazla 90 kelimelik 2-3 tam cümleyle Türkçe ver. Cevabı yarıda kesme. Kaynak adı, kaynak id'si veya citation yazma."
-  ].join("\n");
+  const userPrompt =
+    [
+      `Kod adın: ${input.agent.code}. Rolün: ${input.agent.role}`,
+      `Guardrail: ${input.agent.guardrail}`,
+      "",
+      `Kullanıcı sorusu: ${input.question}`,
+      "",
+      `Önceki ajan konuşmaları:\n${previousText || "Yok"}`,
+      "",
+      `Kanıt parçaları:\n${evidenceText || "Kanıt bulunamadı."}`,
+      "",
+      "Yanıtını en fazla 90 kelimelik 2-3 tam cümleyle Türkçe ver. Cevabı yarıda kesme. Kaynak adı, kaynak id'si veya citation yazma."
+    ].join("\n") + buildHistoryBlock(input.conversationHistory);
 
   return requestMiniMaxCompletion(systemPrompt, userPrompt);
 }
@@ -178,6 +195,7 @@ export async function generateMiniMaxAgentTurn(input: GenerateAgentTurnInput) {
 interface GenerateLeadSynthesisInput {
   question: string;
   turns: Array<{ code: string; name: string; content: string }>;
+  conversationHistory?: ConversationHistoryEntry[];
 }
 
 export async function generateMiniMaxLeadSynthesis(
@@ -199,13 +217,14 @@ export async function generateMiniMaxLeadSynthesis(
     "Gerektiğinde tam olarak şu biçimde diyagram etiketi bırak: [Diyagram Önerisi: kısa açıklama]"
   ].join("\n");
 
-  const userPrompt = [
-    `Kullanıcı sorusu: ${input.question}`,
-    "",
-    `Uzman ajan yanıtları:\n${turnsText}`,
-    "",
-    "Yanıtını en fazla 120 kelimelik 3-4 tam cümleyle Türkçe ver. Cevabı yarıda kesme."
-  ].join("\n");
+  const userPrompt =
+    [
+      `Kullanıcı sorusu: ${input.question}`,
+      "",
+      `Uzman ajan yanıtları:\n${turnsText}`,
+      "",
+      "Yanıtını en fazla 120 kelimelik 3-4 tam cümleyle Türkçe ver. Cevabı yarıda kesme."
+    ].join("\n") + buildHistoryBlock(input.conversationHistory);
 
   return requestMiniMaxCompletion(systemPrompt, userPrompt);
 }

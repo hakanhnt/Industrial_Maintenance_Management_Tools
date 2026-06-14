@@ -7,10 +7,10 @@ import type {
   AgentCode,
   AgentProfile,
   AgentTurn,
-  AskResponse,
   EvidenceStatus,
   MaintenanceDomain,
-  ReferenceChunk
+  ReferenceChunk,
+  StreamEvent
 } from "@/lib/models/maintenance";
 
 const diagramPattern = /\[Diyagram Önerisi:\s*([^\]]+)\]/g;
@@ -154,10 +154,10 @@ async function generateAgentContent(
   });
 }
 
-export async function runMaintenanceAgents(
+export async function* runMaintenanceAgentsStream(
   question: string,
   selectedAgents?: AgentCode[]
-): Promise<AskResponse> {
+): AsyncGenerator<StreamEvent, void, unknown> {
   const normalizedQuestion = question.trim();
   const selectedAgentSet =
     selectedAgents && selectedAgents.length > 0 ? new Set(selectedAgents) : null;
@@ -171,6 +171,8 @@ export async function runMaintenanceAgents(
   const corpusChunks = await listReferenceChunks();
 
   for (const agent of activeProfiles) {
+    yield { type: "agent_start", agent: agent.code };
+
     let evidence = retrieveChunks(
       corpusChunks,
       normalizedQuestion,
@@ -181,14 +183,16 @@ export async function runMaintenanceAgents(
     let usedWebFallback = false;
 
     if (!agentShouldAnswer(agent, normalizedQuestion, evidence, forceSelectedScope)) {
-      turns.push({
+      const turn: AgentTurn = {
         agent,
         content: "",
         evidence: [],
         diagramSuggestions: [],
         status: "skipped",
         skippedReason: "Soru bu ajanın karar alanına yeterince temas etmiyor."
-      });
+      };
+      turns.push(turn);
+      yield { type: "agent_turn", turn };
       continue;
     }
 
@@ -253,13 +257,15 @@ export async function runMaintenanceAgents(
         ? "insufficient_sources"
         : "grounded";
 
-    turns.push({
+    const turn: AgentTurn = {
       agent,
       content: finalContent,
       evidence,
       diagramSuggestions: extractDiagramSuggestions(finalContent),
       status
-    });
+    };
+    turns.push(turn);
+    yield { type: "agent_turn", turn };
   }
 
   const answeredTurns = turns.filter((turn) => turn.status !== "skipped");
@@ -271,14 +277,13 @@ export async function runMaintenanceAgents(
       ? "grounded"
       : "insufficient_sources";
 
-  return {
-    question: normalizedQuestion,
+  yield {
+    type: "final",
     status,
     executiveSummary:
       status === "grounded"
         ? "Ajanlar soruyu kayıtlı bilgi tabanı ve gerektiğinde web destekli kanıtlarla değerlendirdi."
         : "Referans PDF/EPUB korpusu henüz yüklenmediği için çıktı yalnızca platform iskeleti ve kaynak yetersizliği uyarısı içerir.",
-    turns,
     citations: []
   };
 }

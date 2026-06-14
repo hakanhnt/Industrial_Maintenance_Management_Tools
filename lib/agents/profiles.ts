@@ -47,3 +47,13 @@ export const agentProfiles: AgentProfile[] = [
     triggerKeywords: ["oee", "mtbf", "mttr", "wrench", "kpi", "metrik", "analiz"]
   }
 ];
+
+export const leadAgentProfile: AgentProfile = {
+  code: "LEAD",
+  name: "Yönetici",
+  domain: "strategy",
+  role: "Diğer ajanların yanıtlarını okuyup kullanıcının sorusu için tek, tutarlı bir sonuç cevabı üretir.",
+  guardrail:
+    "Sadece diğer ajanların ürettiği içerikleri sentezler; yeni teknik iddia veya kaynak eklemez.",
+  triggerKeywords: []
+};

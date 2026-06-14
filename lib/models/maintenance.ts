@@ -1,4 +1,4 @@
-export type AgentCode = "CORE" | "FIELD" | "FLOW" | "BASE" | "KPI";
+export type AgentCode = "CORE" | "FIELD" | "FLOW" | "BASE" | "KPI" | "LEAD";
 
 export type SourceType = "pdf" | "epub" | "manual" | "brief" | "web";
 

@@ -8,6 +8,7 @@ import type {
   AgentCode,
   AgentProfile,
   AgentTurn,
+  ConversationHistoryEntry,
   EvidenceStatus,
   MaintenanceDomain,
   ReferenceChunk,
@@ -165,7 +166,8 @@ async function generateAgentContent(
   agent: AgentProfile,
   question: string,
   previousTurns: AgentTurn[],
-  evidence: ReferenceChunk[]
+  evidence: ReferenceChunk[],
+  history?: ConversationHistoryEntry[]
 ) {
   return generateMiniMaxAgentTurn({
     agent,
@@ -176,13 +178,15 @@ async function generateAgentContent(
         code: turn.agent.code,
         content: turn.content
       })),
-    evidence
+    evidence,
+    conversationHistory: history
   });
 }
 
 export async function* runMaintenanceAgentsStream(
   question: string,
-  selectedAgents?: AgentCode[]
+  selectedAgents?: AgentCode[],
+  history?: ConversationHistoryEntry[]
 ): AsyncGenerator<StreamEvent, void, unknown> {
   const normalizedQuestion = question.trim();
   const selectedAgentSet =
@@ -237,7 +241,7 @@ export async function* runMaintenanceAgentsStream(
 
     if (hasUsableEvidence(evidence)) {
       try {
-        content = await generateAgentContent(agent, normalizedQuestion, turns, evidence);
+        content = await generateAgentContent(agent, normalizedQuestion, turns, evidence, history);
       } catch {
         content = null;
       }
@@ -259,7 +263,8 @@ export async function* runMaintenanceAgentsStream(
             agent,
             normalizedQuestion,
             turns,
-            webEvidence
+            webEvidence,
+            history
           );
           content = isInsufficientContent(webContent) ? null : webContent;
         } catch {
@@ -317,7 +322,8 @@ export async function* runMaintenanceAgentsStream(
           code: turn.agent.code,
           name: turn.agent.name,
           content: turn.content
-        }))
+        })),
+        conversationHistory: history
       }).catch(() => null)) ?? buildLeadFallbackSummary(answeredTurns);
 
     leadTurn = {

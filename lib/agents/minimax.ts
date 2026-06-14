@@ -8,6 +8,7 @@ interface GenerateAgentTurnInput {
 }
 
 interface MiniMaxChoice {
+  finish_reason?: string;
   message?: {
     content?: string;
   };
@@ -54,6 +55,37 @@ function extractMiniMaxText(data: MiniMaxResponse) {
   return cleaned || null;
 }
 
+function truncateText(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength).trim()}...`;
+}
+
+function trimToCompleteSentence(value: string) {
+  if (/[.!?…]$/.test(value.trim())) {
+    return value.trim();
+  }
+
+  const lastSentenceEnd = Math.max(
+    value.lastIndexOf("."),
+    value.lastIndexOf("!"),
+    value.lastIndexOf("?"),
+    value.lastIndexOf("…")
+  );
+
+  if (lastSentenceEnd < 120) {
+    return value.trim();
+  }
+
+  return value.slice(0, lastSentenceEnd + 1).trim();
+}
+
+function wasTruncated(data: MiniMaxResponse) {
+  return data.choices?.some((choice) => choice.finish_reason === "length") ?? false;
+}
+
 export async function generateMiniMaxAgentTurn(input: GenerateAgentTurnInput) {
   const config = getMiniMaxConfig();
 
@@ -61,15 +93,14 @@ export async function generateMiniMaxAgentTurn(input: GenerateAgentTurnInput) {
     return null;
   }
 
+  const miniMaxConfig = config;
+
   const evidenceText = input.evidence
-    .map(
-      (chunk) =>
-        `- [${chunk.id}] ${chunk.title} (${chunk.locationLabel}): ${chunk.text}`
-    )
+    .map((chunk, index) => `Kanıt ${index + 1}: ${truncateText(chunk.text, 1600)}`)
     .join("\n");
 
   const previousText = input.previousTurns
-    .map((turn) => `${turn.code}: ${turn.content}`)
+    .map((turn) => `${turn.code}: ${truncateText(turn.content, 420)}`)
     .join("\n");
 
   const systemPrompt = [
@@ -91,37 +122,50 @@ export async function generateMiniMaxAgentTurn(input: GenerateAgentTurnInput) {
     "",
     `Kanıt parçaları:\n${evidenceText || "Kanıt bulunamadı."}`,
     "",
-    "Yanıtını 2-4 tam cümleyle Türkçe ver. Cevabı yarıda kesme. Kaynak adı, kaynak id'si veya citation yazma."
+    "Yanıtını en fazla 90 kelimelik 2-3 tam cümleyle Türkçe ver. Cevabı yarıda kesme. Kaynak adı, kaynak id'si veya citation yazma."
   ].join("\n");
 
-  const response = await fetch(config.endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt
-        },
-        {
-          role: "user",
-          content: userPrompt
-        }
-      ],
-      temperature: 0.2,
-      top_p: 0.8,
-      max_tokens: 900
-    })
-  });
+  async function requestMiniMax(maxTokens: number) {
+    const response = await fetch(miniMaxConfig.endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${miniMaxConfig.apiKey}`
+      },
+      body: JSON.stringify({
+        model: miniMaxConfig.model,
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt
+          },
+          {
+            role: "user",
+            content: userPrompt
+          }
+        ],
+        temperature: 0.2,
+        top_p: 0.8,
+        max_tokens: maxTokens
+      })
+    });
 
-  if (!response.ok) {
-    throw new Error(`MiniMax request failed: ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`MiniMax request failed: ${response.status}`);
+    }
+
+    return (await response.json()) as MiniMaxResponse;
   }
 
-  const data = (await response.json()) as MiniMaxResponse;
-  return extractMiniMaxText(data);
+  const firstData = await requestMiniMax(1600);
+  const firstText = extractMiniMaxText(firstData);
+
+  if (!wasTruncated(firstData) && firstText) {
+    return trimToCompleteSentence(firstText);
+  }
+
+  const retryData = await requestMiniMax(3200);
+  const retryText = extractMiniMaxText(retryData);
+
+  return retryText ? trimToCompleteSentence(retryText) : firstText;
 }

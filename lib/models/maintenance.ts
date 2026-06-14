@@ -92,10 +92,16 @@ export interface AgentTurn {
   skippedReason?: string;
 }
 
+export interface ConversationHistoryEntry {
+  question: string;
+  leadAnswer: string;
+}
+
 export interface AskRequest {
   question: string;
   mode?: "training" | "decision_support";
   selectedAgents?: AgentCode[];
+  history?: ConversationHistoryEntry[];
 }
 
 export interface AskResponse {

@@ -1,4 +1,5 @@
 import type { AgentProfile, ReferenceChunk } from "@/lib/models/maintenance";
+import { truncateText } from "@/lib/agents/text-utils";
 
 interface GenerateAgentTurnInput {
   agent: AgentProfile;
@@ -57,14 +58,6 @@ function extractMiniMaxText(data: MiniMaxResponse) {
   }
 
   return cleaned || null;
-}
-
-function truncateText(value: string, maxLength: number) {
-  if (value.length <= maxLength) {
-    return value;
-  }
-
-  return `${value.slice(0, maxLength).trim()}...`;
 }
 
 function trimToCompleteSentence(value: string) {

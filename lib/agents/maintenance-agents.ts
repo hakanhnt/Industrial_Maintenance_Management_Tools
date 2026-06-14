@@ -3,6 +3,7 @@ import { generateMiniMaxAgentTurn } from "@/lib/agents/minimax";
 import { retrieveChunks } from "@/lib/knowledge/reference-corpus";
 import { searchWebEvidence } from "@/lib/knowledge/web-search";
 import { listReferenceChunks } from "@/lib/appwrite/reference-repository";
+import { truncateText } from "@/lib/agents/text-utils";
 import type {
   AgentCode,
   AgentProfile,
@@ -27,18 +28,10 @@ function hasUsableEvidence(chunks: ReferenceChunk[]) {
   return chunks.length > 0 && !hasOnlyBootstrapEvidence(chunks);
 }
 
-function truncateForSummary(value: string, maxLength: number): string {
-  if (value.length <= maxLength) {
-    return value;
-  }
-
-  return `${value.slice(0, maxLength).trim()}...`;
-}
-
 function buildWebSummary(agent: AgentProfile, evidence: ReferenceChunk[]): string {
   const points = evidence
     .slice(0, 3)
-    .map((chunk) => `${chunk.title}: ${truncateForSummary(chunk.text, 240)}`)
+    .map((chunk) => `${chunk.title}: ${truncateText(chunk.text, 240)}`)
     .join(" ");
 
   return [

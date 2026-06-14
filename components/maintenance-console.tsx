@@ -2,24 +2,22 @@
 
 import { useMemo, useState } from "react";
 import {
-  ArrowRight,
   Database,
   FileStack,
   Gauge,
   Loader2,
-  Radar,
+  RotateCcw,
   Send,
   ShieldCheck,
   Users
 } from "lucide-react";
-import { AgentNode } from "@/components/agent-node";
-import { AgentResponseCard } from "@/components/agent-response-card";
+import { ConversationRound } from "@/components/conversation-round";
 import { StatusPill } from "@/components/status-pill";
-import { leadAgentProfile } from "@/lib/agents/profiles";
 import type {
   AgentCode,
   AgentProfile,
   AskResponse,
+  ConversationHistoryEntry,
   ReferenceDocument,
   StreamEvent
 } from "@/lib/models/maintenance";
@@ -42,9 +40,20 @@ const sampleQuestions = [
   "Arıza geçmişi zayıf olan yeni ekipman için bakım stratejisi nasıl başlatılmalı?"
 ];
 
+function emptyRound(question: string): AskResponse {
+  return {
+    question,
+    status: "insufficient_sources",
+    executiveSummary: "",
+    turns: [],
+    citations: []
+  };
+}
+
 export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProps) {
   const [question, setQuestion] = useState(sampleQuestions[0]);
-  const [response, setResponse] = useState<AskResponse | null>(null);
+  const [rounds, setRounds] = useState<AskResponse[]>([]);
+  const [collapsedRoundIndexes, setCollapsedRoundIndexes] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [activeAgentCode, setActiveAgentCode] = useState<AgentCode | null>(null);
   const [selectedAgents, setSelectedAgents] = useState<AgentCode[]>(
@@ -56,11 +65,13 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
     () => documents.filter((document) => document.sourceType !== "brief").length,
     [documents]
   );
-  const answeredTurns = response?.turns.filter((turn) => turn.status !== "skipped") ?? [];
-  const skippedTurns = response?.turns.filter((turn) => turn.status === "skipped") ?? [];
+
+  const lastRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
+  const answeredTurns = lastRound?.turns.filter((turn) => turn.status !== "skipped") ?? [];
+  const skippedTurns = lastRound?.turns.filter((turn) => turn.status === "skipped") ?? [];
   const selectedAgentSet = useMemo(() => new Set(selectedAgents), [selectedAgents]);
+
   function toggleAgent(agentCode: AgentCode) {
-    setResponse(null);
     setError(null);
 
     setSelectedAgents((current) => {
@@ -75,7 +86,7 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
   }
 
   function agentScopeLabel(agentCode: AgentCode) {
-    const turn = response?.turns.find((item) => item.agent.code === agentCode);
+    const turn = lastRound?.turns.find((item) => item.agent.code === agentCode);
 
     if (!selectedAgentSet.has(agentCode)) {
       return "seçilmedi";
@@ -100,6 +111,23 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
     return "hazır";
   }
 
+  function updateLastRound(updater: (round: AskResponse) => AskResponse) {
+    setRounds((current) => {
+      if (current.length === 0) return current;
+      const next = [...current];
+      next[next.length - 1] = updater(next[next.length - 1]);
+      return next;
+    });
+  }
+
+  function dropLastRoundIfEmpty() {
+    setRounds((current) => {
+      if (current.length === 0) return current;
+      const last = current[current.length - 1];
+      return last.turns.length === 0 ? current.slice(0, -1) : current;
+    });
+  }
+
   function handleStreamEvent(event: StreamEvent) {
     if (event.type === "agent_start") {
       setActiveAgentCode(event.agent);
@@ -107,46 +135,45 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
     }
 
     if (event.type === "agent_turn") {
-      setResponse((current) =>
-        current ? { ...current, turns: [...current.turns, event.turn] } : current
-      );
+      updateLastRound((round) => ({ ...round, turns: [...round.turns, event.turn] }));
       return;
     }
 
     if (event.type === "final") {
-      setResponse((current) =>
-        current
-          ? {
-              ...current,
-              status: event.status,
-              executiveSummary: event.executiveSummary,
-              citations: event.citations
-            }
-          : current
-      );
+      updateLastRound((round) => ({
+        ...round,
+        status: event.status,
+        executiveSummary: event.executiveSummary,
+        citations: event.citations
+      }));
       return;
     }
 
     setError(event.message);
-    setResponse((current) =>
-      current && current.turns.length === 0 && !current.executiveSummary ? null : current
-    );
+    dropLastRoundIfEmpty();
   }
 
   async function submitQuestion() {
     const nextQuestion = question.trim();
     if (!nextQuestion || isLoading) return;
 
+    const history: ConversationHistoryEntry[] = rounds.map((round) => ({
+      question: round.question,
+      leadAnswer: round.turns.find((turn) => turn.agent.code === "LEAD")?.content ?? ""
+    }));
+
     setIsLoading(true);
     setActiveAgentCode(null);
-    setResponse({
-      question: nextQuestion,
-      status: "insufficient_sources",
-      executiveSummary: "",
-      turns: [],
-      citations: []
-    });
     setError(null);
+    setCollapsedRoundIndexes((current) => {
+      const next = new Set(current);
+      for (let index = 0; index < rounds.length; index += 1) {
+        next.add(index);
+      }
+      return next;
+    });
+    setRounds((current) => [...current, emptyRound(nextQuestion)]);
+    setQuestion("");
 
     try {
       const result = await fetch("/api/ask", {
@@ -157,7 +184,8 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
         body: JSON.stringify({
           question: nextQuestion,
           mode: "training",
-          selectedAgents
+          selectedAgents,
+          history
         })
       });
 
@@ -193,13 +221,19 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Bilinmeyen hata.");
-      setResponse((current) =>
-        current && current.turns.length === 0 && !current.executiveSummary ? null : current
-      );
+      dropLastRoundIfEmpty();
     } finally {
       setIsLoading(false);
       setActiveAgentCode(null);
     }
+  }
+
+  function startNewConversation() {
+    if (isLoading) return;
+    setRounds([]);
+    setCollapsedRoundIndexes(new Set());
+    setError(null);
+    setQuestion(sampleQuestions[0]);
   }
 
   return (
@@ -222,7 +256,7 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
             </div>
 
             <label className="text-xs font-medium uppercase tracking-[0.16em] text-muted">
-              Soru
+              {rounds.length === 0 ? "Soru" : "Takip Sorusu"}
             </label>
             <textarea
               value={question}
@@ -269,8 +303,20 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
               className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-signal/40 bg-signal px-4 text-sm font-semibold text-ink transition hover:bg-[#d8ff64] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-muted"
             >
               {isLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-              Ajanları Çalıştır
+              {rounds.length === 0 ? "Ajanları Çalıştır" : "Takip Sorusu Gönder"}
             </button>
+
+            {rounds.length > 0 && (
+              <button
+                type="button"
+                onClick={startNewConversation}
+                disabled={isLoading}
+                className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-4 text-sm font-medium text-muted transition hover:border-white/20 hover:text-platinum disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <RotateCcw className="size-4" />
+                Yeni Sohbet
+              </button>
+            )}
 
             {error && (
               <p className="mt-3 rounded-lg border border-copper/40 bg-copper/10 p-3 text-sm text-[#ffd3a6]">
@@ -304,99 +350,7 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
         </aside>
 
         <section className="min-w-0 space-y-5">
-          <div className="glass-panel rounded-lg p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted">
-                  Multi-Agent Dialogue
-                </p>
-                <h2 className="mt-2 text-xl font-semibold text-platinum">
-                  CORE → FIELD → FLOW → BASE → KPI → LEAD
-                </h2>
-              </div>
-              <StatusPill tone={response?.status === "grounded" ? "ready" : "muted"}>
-                {isLoading ? "Çalışıyor" : response ? response.status : "Hazır"}
-              </StatusPill>
-            </div>
-
-            <div className="mt-5 grid gap-3 lg:grid-cols-6">
-              {agents.map((agent) => (
-                <div key={agent.code} className="flex min-w-0 items-center gap-3 lg:block">
-                  <AgentNode
-                    code={agent.code}
-                    label={agent.name}
-                    active={Boolean(
-                      response?.turns.some(
-                        (turn) =>
-                          turn.agent.code === agent.code && turn.status !== "skipped"
-                      )
-                    )}
-                    skipped={Boolean(
-                      !selectedAgentSet.has(agent.code) ||
-                        response?.turns.some(
-                          (turn) => turn.agent.code === agent.code && turn.status === "skipped"
-                        )
-                    )}
-                    working={isLoading && activeAgentCode === agent.code}
-                  />
-                  <ArrowRight className="size-4 shrink-0 text-muted lg:mx-auto lg:my-3 lg:rotate-90" />
-                </div>
-              ))}
-              <div className="flex min-w-0 items-center gap-3 lg:block">
-                <AgentNode
-                  code="LEAD"
-                  label={leadAgentProfile.name}
-                  active={Boolean(
-                    response?.turns.some(
-                      (turn) => turn.agent.code === "LEAD" && turn.status !== "skipped"
-                    )
-                  )}
-                  skipped={Boolean(
-                    response?.turns.some(
-                      (turn) => turn.agent.code === "LEAD" && turn.status === "skipped"
-                    )
-                  )}
-                  working={isLoading && activeAgentCode === "LEAD"}
-                />
-              </div>
-            </div>
-          </div>
-
-          {response ? (
-            <div className="space-y-5">
-              {answeredTurns.length === 0 && isLoading ? (
-                <div className="glass-panel flex min-h-[420px] items-center justify-center rounded-lg p-6">
-                  <div className="max-w-xl text-center">
-                    <Loader2 className="mx-auto size-9 animate-spin text-signal" />
-                    <h2 className="mt-5 text-2xl font-semibold text-platinum">
-                      Ajanlar değerlendiriyor
-                    </h2>
-                    <p className="mt-3 text-sm leading-7 text-muted">
-                      Soru önce ilgili ajan alanlarıyla eşleştiriliyor, ardından yalnızca gerekli
-                      ajanlar kanıt parçalarıyla yanıt üretiyor.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {answeredTurns.map((turn) => (
-                    <AgentResponseCard key={turn.agent.code} turn={turn} />
-                  ))}
-                  {!isLoading && answeredTurns.length === 0 && (
-                    <div className="glass-panel rounded-lg p-5 text-sm leading-7 text-muted">
-                      Bu soru mevcut ajan kapsamıyla yeterince eşleşmediği için yanıt üretilmedi.
-                    </div>
-                  )}
-                  {isLoading && (
-                    <div className="glass-panel flex items-center gap-3 rounded-lg p-4 text-sm text-muted">
-                      <Loader2 className="size-4 animate-spin text-signal" />
-                      Ajanlar değerlendirmeye devam ediyor...
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          ) : (
+          {rounds.length === 0 ? (
             <div className="glass-panel flex min-h-[420px] items-center justify-center rounded-lg p-6">
               <div className="max-w-xl text-center">
                 <Gauge className="mx-auto size-9 text-signal" />
@@ -409,6 +363,30 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
                 </p>
               </div>
             </div>
+          ) : (
+            rounds.map((round, index) => (
+              <ConversationRound
+                key={index}
+                round={round}
+                agents={agents}
+                selectedAgentSet={selectedAgentSet}
+                isActive={index === rounds.length - 1}
+                activeAgentCode={activeAgentCode}
+                isLoading={isLoading}
+                collapsed={collapsedRoundIndexes.has(index)}
+                onToggleCollapse={() =>
+                  setCollapsedRoundIndexes((current) => {
+                    const next = new Set(current);
+                    if (next.has(index)) {
+                      next.delete(index);
+                    } else {
+                      next.add(index);
+                    }
+                    return next;
+                  })
+                }
+              />
+            ))
           )}
         </section>
 
@@ -436,18 +414,17 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
               <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted">
                 Ajan Kapsamı
               </h2>
-              <Radar className="size-4 text-signal" />
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
                 <div className="text-2xl font-semibold text-platinum">
-                  {response ? answeredTurns.length : "-"}
+                  {lastRound ? answeredTurns.length : "-"}
                 </div>
                 <div className="mt-1 text-xs text-muted">yanıtlayan</div>
               </div>
               <div className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
                 <div className="text-2xl font-semibold text-platinum">
-                  {response ? skippedTurns.length : "-"}
+                  {lastRound ? skippedTurns.length : "-"}
                 </div>
                 <div className="mt-1 text-xs text-muted">atlanan</div>
               </div>

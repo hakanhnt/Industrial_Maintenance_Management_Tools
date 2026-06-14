@@ -102,6 +102,10 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
       return "atlanmış";
     }
 
+    if (turn?.status === "web_fallback") {
+      return "web destekli";
+    }
+
     if (turn) {
       return "yanıtladı";
     }

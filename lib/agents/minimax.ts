@@ -52,6 +52,10 @@ function extractMiniMaxText(data: MiniMaxResponse) {
     .replace(/<\/think>/gi, "")
     .trim();
 
+  if (/^yeters[iıİI]z[_\s-]*kan[iıİI]t\b/i.test(cleaned ?? "")) {
+    return null;
+  }
+
   return cleaned || null;
 }
 
@@ -109,6 +113,7 @@ export async function generateMiniMaxAgentTurn(input: GenerateAgentTurnInput) {
     "İç muhakeme, chain-of-thought veya <think> bloğu yazma; yalnızca nihai cevabı ver.",
     "Kaynak adı, kaynak ID'si, sayfa bilgisi veya parantez içinde citation yazma.",
     "Kaynaklarda olmayan teknik iddiaları üretme. Kaynak yetersizse açıkça belirt.",
+    "Kanıtlar soruyu doğrudan cevaplamıyorsa yalnızca YETERSIZ_KANIT yaz.",
     "Gerektiğinde tam olarak şu biçimde diyagram etiketi bırak: [Diyagram Önerisi: kısa açıklama]"
   ].join("\n");
 

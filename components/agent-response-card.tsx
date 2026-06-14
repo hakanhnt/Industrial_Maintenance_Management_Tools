@@ -25,8 +25,18 @@ export function AgentResponseCard({ turn }: AgentResponseCardProps) {
             <p className="mt-1 text-sm text-muted">{turn.agent.role}</p>
           </div>
         </div>
-        <StatusPill tone={turn.status === "grounded" ? "ready" : "warning"}>
-          {turn.status === "grounded" ? "Yanıtlandı" : "Yetersiz veri"}
+        <StatusPill
+          tone={
+            turn.status === "grounded" || turn.status === "web_fallback"
+              ? "ready"
+              : "warning"
+          }
+        >
+          {turn.status === "web_fallback"
+            ? "Web destekli"
+            : turn.status === "grounded"
+              ? "Yanıtlandı"
+              : "Yetersiz veri"}
         </StatusPill>
       </div>
 

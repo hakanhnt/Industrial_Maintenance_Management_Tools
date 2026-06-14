@@ -23,6 +23,7 @@ AI-first maintenance management guide and training platform for industrial maint
 - Tailwind CSS
 - Appwrite database
 - MiniMax chat completions API
+- Tavily web search fallback
 - PDF/EPUB indexing scripts
 
 ## Project Structure
@@ -55,6 +56,9 @@ Create `.env.local` in the project root:
 MINIMAX_API_KEY=
 MINIMAX_API_URL=https://api.minimaxi.chat/v1/chat/completions
 MINIMAX_MODEL=MiniMax-M3
+
+TAVILY_API_KEY=
+TAVILY_API_URL=https://api.tavily.com/search
 
 APPWRITE_ENDPOINT=
 APPWRITE_PROJECT_ID=
@@ -129,4 +133,5 @@ npm run build
 - The app is designed as an educational guide and decision-support simulator.
 - It should not produce live operational decisions without reviewed source material.
 - Agent answers are constrained by indexed reference documents.
-- If no relevant evidence exists, the agent is skipped or returns insufficient-data behavior.
+- If no relevant local evidence exists and Tavily is configured, the agent can use web fallback evidence.
+- Web fallback answers are marked in the UI, but source details are not shown in the answer text.

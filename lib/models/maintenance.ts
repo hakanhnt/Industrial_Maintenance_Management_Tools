@@ -1,6 +1,6 @@
 export type AgentCode = "CORE" | "FIELD" | "FLOW" | "BASE" | "KPI";
 
-export type SourceType = "pdf" | "epub" | "manual" | "brief";
+export type SourceType = "pdf" | "epub" | "manual" | "brief" | "web";
 
 export type MaintenanceDomain =
   | "strategy"
@@ -9,7 +9,11 @@ export type MaintenanceDomain =
   | "archive"
   | "analytics";
 
-export type EvidenceStatus = "grounded" | "insufficient_sources" | "skipped";
+export type EvidenceStatus =
+  | "grounded"
+  | "web_fallback"
+  | "insufficient_sources"
+  | "skipped";
 
 export interface ReferenceDocument {
   id: string;

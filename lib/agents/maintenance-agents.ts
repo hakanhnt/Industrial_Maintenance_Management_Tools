@@ -1,5 +1,5 @@
-import { agentProfiles } from "@/lib/agents/profiles";
-import { generateMiniMaxAgentTurn } from "@/lib/agents/minimax";
+import { agentProfiles, leadAgentProfile } from "@/lib/agents/profiles";
+import { generateMiniMaxAgentTurn, generateMiniMaxLeadSynthesis } from "@/lib/agents/minimax";
 import { retrieveChunks } from "@/lib/knowledge/reference-corpus";
 import { searchWebEvidence } from "@/lib/knowledge/web-search";
 import { listReferenceChunks } from "@/lib/appwrite/reference-repository";
@@ -39,6 +39,17 @@ function buildWebSummary(agent: AgentProfile, evidence: ReferenceChunk[]): strin
     `bu nedenle web kaynaklarından derlenen bilgiler özetlendi.`,
     points,
     "[Diyagram Önerisi: Web kaynaklı kanıt değerlendirme akışı]"
+  ].join(" ");
+}
+
+function buildLeadFallbackSummary(answeredTurns: AgentTurn[]): string {
+  const points = answeredTurns
+    .map((turn) => `${turn.agent.name}: ${truncateText(turn.content, 220)}`)
+    .join(" ");
+
+  return [
+    "Aşağıda uzman ajanların ürettiği yanıtların birleştirilmiş özeti yer almaktadır.",
+    points
   ].join(" ");
 }
 
@@ -294,13 +305,46 @@ export async function* runMaintenanceAgentsStream(
       ? "grounded"
       : "insufficient_sources";
 
+  yield { type: "agent_start", agent: "LEAD" };
+
+  let leadTurn: AgentTurn;
+
+  if (answeredTurns.length > 0) {
+    const leadContent =
+      (await generateMiniMaxLeadSynthesis({
+        question: normalizedQuestion,
+        turns: answeredTurns.map((turn) => ({
+          code: turn.agent.code,
+          name: turn.agent.name,
+          content: turn.content
+        }))
+      }).catch(() => null)) ?? buildLeadFallbackSummary(answeredTurns);
+
+    leadTurn = {
+      agent: leadAgentProfile,
+      content: leadContent,
+      evidence: [],
+      diagramSuggestions: extractDiagramSuggestions(leadContent),
+      status: "grounded"
+    };
+  } else {
+    leadTurn = {
+      agent: leadAgentProfile,
+      content: "",
+      evidence: [],
+      diagramSuggestions: [],
+      status: "skipped",
+      skippedReason: "Sentezlenecek ajan yanıtı bulunmadığından yönetici özeti üretilmedi."
+    };
+  }
+
+  turns.push(leadTurn);
+  yield { type: "agent_turn", turn: leadTurn };
+
   yield {
     type: "final",
     status,
-    executiveSummary:
-      status === "grounded"
-        ? "Ajanlar soruyu kayıtlı bilgi tabanı ve gerektiğinde web destekli kanıtlarla değerlendirdi."
-        : "Referans PDF/EPUB korpusu henüz yüklenmediği için çıktı yalnızca platform iskeleti ve kaynak yetersizliği uyarısı içerir.",
+    executiveSummary: "",
     citations: []
   };
 }

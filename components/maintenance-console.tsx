@@ -190,6 +190,9 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Bilinmeyen hata.");
+      setResponse((current) =>
+        current && current.turns.length === 0 && !current.executiveSummary ? null : current
+      );
     } finally {
       setIsLoading(false);
       setActiveAgentCode(null);

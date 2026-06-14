@@ -1,7 +1,24 @@
 import { runMaintenanceAgentsStream } from "@/lib/agents/maintenance-agents";
-import type { AgentCode, AskRequest } from "@/lib/models/maintenance";
+import type { AgentCode, AskRequest, ConversationHistoryEntry } from "@/lib/models/maintenance";
 
 const agentCodes = new Set<AgentCode>(["CORE", "FIELD", "FLOW", "BASE", "KPI"]);
+
+function parseHistory(value: unknown): ConversationHistoryEntry[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries = value.filter((item): item is ConversationHistoryEntry => {
+    if (typeof item !== "object" || item === null) {
+      return false;
+    }
+
+    const candidate = item as Record<string, unknown>;
+    return typeof candidate.question === "string" && typeof candidate.leadAnswer === "string";
+  });
+
+  return entries.length > 0 ? entries : undefined;
+}
 
 export async function POST(request: Request) {
   let body: AskRequest;
@@ -29,12 +46,14 @@ export async function POST(request: Request) {
     ? body.selectedAgents.filter((agent): agent is AgentCode => agentCodes.has(agent))
     : undefined;
 
+  const history = parseHistory(body.history);
+
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for await (const event of runMaintenanceAgentsStream(question, selectedAgents)) {
+        for await (const event of runMaintenanceAgentsStream(question, selectedAgents, history)) {
           controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
         }
       } catch (error) {

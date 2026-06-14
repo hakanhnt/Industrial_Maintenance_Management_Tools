@@ -109,3 +109,14 @@ export interface AskResponse {
     locationLabel: string;
   }>;
 }
+
+export type StreamEvent =
+  | { type: "agent_start"; agent: AgentCode }
+  | { type: "agent_turn"; turn: AgentTurn }
+  | {
+      type: "final";
+      status: EvidenceStatus;
+      executiveSummary: string;
+      citations: AskResponse["citations"];
+    }
+  | { type: "error"; message: string };

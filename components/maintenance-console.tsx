@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ArrowRight,
   Database,
@@ -20,7 +20,8 @@ import type {
   AgentCode,
   AgentProfile,
   AskResponse,
-  ReferenceDocument
+  ReferenceDocument,
+  StreamEvent
 } from "@/lib/models/maintenance";
 
 interface MaintenanceConsoleProps {
@@ -45,7 +46,7 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
   const [question, setQuestion] = useState(sampleQuestions[0]);
   const [response, setResponse] = useState<AskResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeAgentIndex, setActiveAgentIndex] = useState(0);
+  const [activeAgentCode, setActiveAgentCode] = useState<AgentCode | null>(null);
   const [selectedAgents, setSelectedAgents] = useState<AgentCode[]>(
     agents.map((agent) => agent.code)
   );
@@ -58,20 +59,6 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
   const answeredTurns = response?.turns.filter((turn) => turn.status !== "skipped") ?? [];
   const skippedTurns = response?.turns.filter((turn) => turn.status === "skipped") ?? [];
   const selectedAgentSet = useMemo(() => new Set(selectedAgents), [selectedAgents]);
-  const activeAgentCode = selectedAgents[activeAgentIndex % selectedAgents.length];
-
-  useEffect(() => {
-    if (!isLoading) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      setActiveAgentIndex((current) => (current + 1) % selectedAgents.length);
-    }, 900);
-
-    return () => window.clearInterval(interval);
-  }, [agents.length, isLoading, selectedAgents.length]);
-
   function toggleAgent(agentCode: AgentCode) {
     setResponse(null);
     setError(null);
@@ -94,10 +81,6 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
       return "seçilmedi";
     }
 
-    if (isLoading) {
-      return "bekliyor";
-    }
-
     if (turn?.status === "skipped") {
       return "atlanmış";
     }
@@ -110,7 +93,41 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
       return "yanıtladı";
     }
 
+    if (isLoading) {
+      return "bekliyor";
+    }
+
     return "hazır";
+  }
+
+  function handleStreamEvent(event: StreamEvent) {
+    if (event.type === "agent_start") {
+      setActiveAgentCode(event.agent);
+      return;
+    }
+
+    if (event.type === "agent_turn") {
+      setResponse((current) =>
+        current ? { ...current, turns: [...current.turns, event.turn] } : current
+      );
+      return;
+    }
+
+    if (event.type === "final") {
+      setResponse((current) =>
+        current
+          ? {
+              ...current,
+              status: event.status,
+              executiveSummary: event.executiveSummary,
+              citations: event.citations
+            }
+          : current
+      );
+      return;
+    }
+
+    setError(event.message);
   }
 
   async function submitQuestion() {
@@ -118,8 +135,14 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
     if (!nextQuestion || isLoading) return;
 
     setIsLoading(true);
-    setActiveAgentIndex(0);
-    setResponse(null);
+    setActiveAgentCode(null);
+    setResponse({
+      question: nextQuestion,
+      status: "insufficient_sources",
+      executiveSummary: "",
+      turns: [],
+      citations: []
+    });
     setError(null);
 
     try {
@@ -140,11 +163,36 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
         throw new Error(payload.error ?? "Ajan yanıtı alınamadı.");
       }
 
-      setResponse((await result.json()) as AskResponse);
+      if (!result.body) {
+        throw new Error("Ajan yanıtı alınamadı.");
+      }
+
+      const reader = result.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          handleStreamEvent(JSON.parse(line) as StreamEvent);
+        }
+      }
+
+      if (buffer.trim()) {
+        handleStreamEvent(JSON.parse(buffer) as StreamEvent);
+      }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Bilinmeyen hata.");
     } finally {
       setIsLoading(false);
+      setActiveAgentCode(null);
     }
   }
 
@@ -293,35 +341,49 @@ export function MaintenanceConsole({ agents, documents }: MaintenanceConsoleProp
             </div>
           </div>
 
-          {isLoading ? (
-            <div className="glass-panel flex min-h-[420px] items-center justify-center rounded-lg p-6">
-              <div className="max-w-xl text-center">
-                <Loader2 className="mx-auto size-9 animate-spin text-signal" />
-                <h2 className="mt-5 text-2xl font-semibold text-platinum">
-                  Ajanlar değerlendiriyor
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-muted">
-                  Soru önce ilgili ajan alanlarıyla eşleştiriliyor, ardından yalnızca gerekli
-                  ajanlar kanıt parçalarıyla yanıt üretiyor.
-                </p>
-              </div>
-            </div>
-          ) : response ? (
+          {response ? (
             <div className="space-y-5">
-              <div className="glass-panel rounded-lg p-5">
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-muted">
-                  <Sparkles className="size-3.5 text-signal" />
-                  Yönetici Özeti
+              {answeredTurns.length === 0 && isLoading ? (
+                <div className="glass-panel flex min-h-[420px] items-center justify-center rounded-lg p-6">
+                  <div className="max-w-xl text-center">
+                    <Loader2 className="mx-auto size-9 animate-spin text-signal" />
+                    <h2 className="mt-5 text-2xl font-semibold text-platinum">
+                      Ajanlar değerlendiriyor
+                    </h2>
+                    <p className="mt-3 text-sm leading-7 text-muted">
+                      Soru önce ilgili ajan alanlarıyla eşleştiriliyor, ardından yalnızca gerekli
+                      ajanlar kanıt parçalarıyla yanıt üretiyor.
+                    </p>
+                  </div>
                 </div>
-                <p className="mt-3 text-sm leading-7 text-[#ded8cc]">{response.executiveSummary}</p>
-              </div>
-              {answeredTurns.map((turn) => (
-                <AgentResponseCard key={turn.agent.code} turn={turn} />
-              ))}
-              {answeredTurns.length === 0 && (
-                <div className="glass-panel rounded-lg p-5 text-sm leading-7 text-muted">
-                  Bu soru mevcut ajan kapsamıyla yeterince eşleşmediği için yanıt üretilmedi.
-                </div>
+              ) : (
+                <>
+                  {response.executiveSummary && (
+                    <div className="glass-panel rounded-lg p-5">
+                      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-muted">
+                        <Sparkles className="size-3.5 text-signal" />
+                        Yönetici Özeti
+                      </div>
+                      <p className="mt-3 text-sm leading-7 text-[#ded8cc]">
+                        {response.executiveSummary}
+                      </p>
+                    </div>
+                  )}
+                  {answeredTurns.map((turn) => (
+                    <AgentResponseCard key={turn.agent.code} turn={turn} />
+                  ))}
+                  {!isLoading && answeredTurns.length === 0 && (
+                    <div className="glass-panel rounded-lg p-5 text-sm leading-7 text-muted">
+                      Bu soru mevcut ajan kapsamıyla yeterince eşleşmediği için yanıt üretilmedi.
+                    </div>
+                  )}
+                  {isLoading && (
+                    <div className="glass-panel flex items-center gap-3 rounded-lg p-4 text-sm text-muted">
+                      <Loader2 className="size-4 animate-spin text-signal" />
+                      Ajanlar değerlendirmeye devam ediyor...
+                    </div>
+                  )}
+                </>
               )}
             </div>
           ) : (

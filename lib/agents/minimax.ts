@@ -83,7 +83,10 @@ function wasTruncated(data: MiniMaxResponse) {
   return data.choices?.some((choice) => choice.finish_reason === "length") ?? false;
 }
 
-export async function generateMiniMaxAgentTurn(input: GenerateAgentTurnInput) {
+async function requestMiniMaxCompletion(
+  systemPrompt: string,
+  userPrompt: string
+): Promise<string | null> {
   const config = getMiniMaxConfig();
 
   if (!config) {
@@ -91,6 +94,52 @@ export async function generateMiniMaxAgentTurn(input: GenerateAgentTurnInput) {
   }
 
   const miniMaxConfig = config;
+
+  async function requestMiniMax(maxTokens: number) {
+    const response = await fetch(miniMaxConfig.endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${miniMaxConfig.apiKey}`
+      },
+      body: JSON.stringify({
+        model: miniMaxConfig.model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        temperature: 0.2,
+        top_p: 0.8,
+        max_tokens: maxTokens
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`MiniMax request failed: ${response.status}`);
+    }
+
+    return (await response.json()) as MiniMaxResponse;
+  }
+
+  const firstData = await requestMiniMax(1600);
+  const firstText = extractMiniMaxText(firstData);
+
+  if (!wasTruncated(firstData) && firstText) {
+    return trimToCompleteSentence(firstText);
+  }
+
+  const retryData = await requestMiniMax(3200);
+  const retryText = extractMiniMaxText(retryData);
+
+  return retryText ? trimToCompleteSentence(retryText) : firstText;
+}
+
+export async function generateMiniMaxAgentTurn(input: GenerateAgentTurnInput) {
+  const config = getMiniMaxConfig();
+
+  if (!config) {
+    return null;
+  }
 
   const evidenceText = input.evidence
     .map((chunk, index) => `Kanıt ${index + 1}: ${truncateText(chunk.text, 1600)}`)
@@ -123,47 +172,40 @@ export async function generateMiniMaxAgentTurn(input: GenerateAgentTurnInput) {
     "Yanıtını en fazla 90 kelimelik 2-3 tam cümleyle Türkçe ver. Cevabı yarıda kesme. Kaynak adı, kaynak id'si veya citation yazma."
   ].join("\n");
 
-  async function requestMiniMax(maxTokens: number) {
-    const response = await fetch(miniMaxConfig.endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${miniMaxConfig.apiKey}`
-      },
-      body: JSON.stringify({
-        model: miniMaxConfig.model,
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user",
-            content: userPrompt
-          }
-        ],
-        temperature: 0.2,
-        top_p: 0.8,
-        max_tokens: maxTokens
-      })
-    });
+  return requestMiniMaxCompletion(systemPrompt, userPrompt);
+}
 
-    if (!response.ok) {
-      throw new Error(`MiniMax request failed: ${response.status}`);
-    }
+interface GenerateLeadSynthesisInput {
+  question: string;
+  turns: Array<{ code: string; name: string; content: string }>;
+}
 
-    return (await response.json()) as MiniMaxResponse;
-  }
+export async function generateMiniMaxLeadSynthesis(
+  input: GenerateLeadSynthesisInput
+): Promise<string | null> {
+  const turnsText = input.turns
+    .map((turn) => `${turn.name} (${turn.code}): ${turn.content}`)
+    .join("\n\n");
 
-  const firstData = await requestMiniMax(1600);
-  const firstText = extractMiniMaxText(firstData);
+  const systemPrompt = [
+    "Sen bir yönetici (lead) ajansın. Görevin, uzman ajanların ürettiği yanıtları",
+    "okuyup kullanıcının sorusu için TEK, tutarlı ve tekrarsız bir Türkçe cevap üretmektir.",
+    "Ton: Skeptic Analyst. Net, teknik, doğrulanabilir ve spekülasyondan uzak yaz.",
+    "İç muhakeme, chain-of-thought veya <think> bloğu yazma; yalnızca nihai cevabı ver.",
+    "Ajan kod adlarına (CORE, FIELD, FLOW, BASE, KPI) veya 'ajanlar' kelimesine atıfta bulunma;",
+    "doğrudan kullanıcıya hitap eden bir cevap yaz.",
+    "Ajan yanıtları arasında çakışan veya birbirini tekrar eden noktaları birleştir.",
+    "Yeni teknik iddia, kaynak veya veri ekleme; sadece verilen yanıtları sentezle.",
+    "Gerektiğinde tam olarak şu biçimde diyagram etiketi bırak: [Diyagram Önerisi: kısa açıklama]"
+  ].join("\n");
 
-  if (!wasTruncated(firstData) && firstText) {
-    return trimToCompleteSentence(firstText);
-  }
+  const userPrompt = [
+    `Kullanıcı sorusu: ${input.question}`,
+    "",
+    `Uzman ajan yanıtları:\n${turnsText}`,
+    "",
+    "Yanıtını en fazla 120 kelimelik 3-4 tam cümleyle Türkçe ver. Cevabı yarıda kesme."
+  ].join("\n");
 
-  const retryData = await requestMiniMax(3200);
-  const retryText = extractMiniMaxText(retryData);
-
-  return retryText ? trimToCompleteSentence(retryText) : firstText;
+  return requestMiniMaxCompletion(systemPrompt, userPrompt);
 }

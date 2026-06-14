@@ -56,6 +56,7 @@ bu alanlar sadece `AgentProfile` arayüzünü tatmin etmek için var.
 
 Mevcut `generateMiniMaxAgentTurn` içindeki şu kısımlar paylaşılan bir
 yardımcıya çıkarılır:
+
 - `getMiniMaxConfig` (zaten modül seviyesinde, değişmez)
 - İki aşamalı istek/retry mantığı (`requestMiniMax` + `wasTruncated` +
   `extractMiniMaxText` + `trimToCompleteSentence` kombinasyonu)

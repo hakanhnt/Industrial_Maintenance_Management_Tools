@@ -186,7 +186,7 @@ export async function generateMiniMaxAgentTurn(input: GenerateAgentTurnInput) {
       "",
       `Kanıt parçaları:\n${evidenceText || "Kanıt bulunamadı."}`,
       "",
-      "Yanıtını en fazla 90 kelimelik 2-3 tam cümleyle Türkçe ver. Cevabı yarıda kesme. Kaynak adı, kaynak id'si veya citation yazma."
+      "Kullanıcı sorusuna en fazla 300 kelimelik, son derece kapsamlı, detaylı, teknik ve açıklayıcı bir Türkçe cevap üret. Konunun tüm alt boyutlarını ve kanıt parçalarını derinlemesine açıkla. Cevabı yarıda kesme. Kaynak adı, kaynak id'si veya citation yazma."
     ].join("\n") + buildHistoryBlock(input.conversationHistory);
 
   return requestMiniMaxCompletion(systemPrompt, userPrompt);
@@ -223,7 +223,47 @@ export async function generateMiniMaxLeadSynthesis(
       "",
       `Uzman ajan yanıtları:\n${turnsText}`,
       "",
-      "Yanıtını en fazla 120 kelimelik 3-4 tam cümleyle Türkçe ver. Cevabı yarıda kesme."
+      "Kullanıcı sorusuna uzman ajanların ürettiği tüm yanıtları sentezleyerek, aralarındaki bağlantıları kuran ve çelişkileri çözen en fazla 450 kelimelik, son derece kapsamlı ve derinlemesine bir Türkçe cevap üret. Cevabı yarıda kesme."
+    ].join("\n") + buildHistoryBlock(input.conversationHistory);
+
+  return requestMiniMaxCompletion(systemPrompt, userPrompt);
+}
+
+export interface GenerateMiniMaxRAGResponseInput {
+  question: string;
+  evidence: ReferenceChunk[];
+  conversationHistory?: ConversationHistoryEntry[];
+}
+
+export async function generateMiniMaxRAGResponse(
+  input: GenerateMiniMaxRAGResponseInput
+): Promise<string | null> {
+  const config = getMiniMaxConfig();
+
+  if (!config) {
+    return null;
+  }
+
+  const evidenceText = input.evidence
+    .map((chunk, index) => `Kanıt [${index + 1}] (${chunk.title}): ${truncateText(chunk.text, 1600)}`)
+    .join("\n\n");
+
+  const systemPrompt = [
+    "Sen kaynak dokümanlara dayalı bir bakım yönetimi uzmanısın.",
+    "Ton: Skeptic Analyst. Net, teknik, doğrulanabilir ve spekülasyondan uzak yaz.",
+    "İç muhakeme veya <think> bloğu yazma; yalnızca nihai cevabı ver.",
+    "Yalnızca sana verilen kanıt parçalarına dayanarak Türkçe yanıt üret.",
+    "Kanıtlar soruyu cevaplamak için yetersizse, doğrudan 'yetersiz_kanit' yaz.",
+    "Gerektiğinde tam olarak şu biçimde diyagram etiketi bırak: [Diyagram Önerisi: kısa açıklama]"
+  ].join("\n");
+
+  const userPrompt =
+    [
+      `Kullanıcı sorusu: ${input.question}`,
+      "",
+      `Kanıt parçaları:\n${evidenceText || "Kanıt bulunamadı."}`,
+      "",
+      "Kullanıcı sorusuna en fazla 350 kelimelik, son derece kapsamlı, detaylı, teknik ve açıklayıcı bir Türkçe cevap üret. Cevabı yarıda kesme. Kaynak adı veya citation yazma."
     ].join("\n") + buildHistoryBlock(input.conversationHistory);
 
   return requestMiniMaxCompletion(systemPrompt, userPrompt);

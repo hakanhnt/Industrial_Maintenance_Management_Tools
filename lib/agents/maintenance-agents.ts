@@ -4,6 +4,8 @@ import { retrieveChunks } from "@/lib/knowledge/reference-corpus";
 import { searchWebEvidence } from "@/lib/knowledge/web-search";
 import { listReferenceChunks } from "@/lib/appwrite/reference-repository";
 import { truncateText } from "@/lib/agents/text-utils";
+import { generateOllamaEmbeddings } from "@/lib/agents/ollama";
+import { queryDocumentChunks } from "@/lib/pinecone/client";
 import type {
   AgentCode,
   AgentProfile,
@@ -31,27 +33,27 @@ function hasUsableEvidence(chunks: ReferenceChunk[]) {
 
 function buildWebSummary(agent: AgentProfile, evidence: ReferenceChunk[]): string {
   const points = evidence
-    .slice(0, 3)
-    .map((chunk) => `${chunk.title}: ${truncateText(chunk.text, 240)}`)
-    .join(" ");
+    .slice(0, 5)
+    .map((chunk) => `${chunk.title}: ${truncateText(chunk.text, 500)}`)
+    .join("\n");
 
   return [
     `${agent.code}: Kayıtlı bilgi tabanında bu soruyla doğrudan eşleşen kanıt bulunamadı,`,
     `bu nedenle web kaynaklarından derlenen bilgiler özetlendi.`,
     points,
     "[Diyagram Önerisi: Web kaynaklı kanıt değerlendirme akışı]"
-  ].join(" ");
+  ].join("\n");
 }
 
 function buildLeadFallbackSummary(answeredTurns: AgentTurn[]): string {
   const points = answeredTurns
-    .map((turn) => `${turn.agent.name}: ${truncateText(turn.content, 220)}`)
-    .join(" ");
+    .map((turn) => `${turn.agent.name}: ${truncateText(turn.content, 1000)}`)
+    .join("\n\n");
 
   return [
-    "Aşağıda uzman ajanların ürettiği yanıtların birleştirilmiş özeti yer almaktadır.",
+    "Aşağıda uzman ajanların ürettiği yanıtların birleştirilmiş detaylı özeti yer almaktadır:",
     points
-  ].join(" ");
+  ].join("\n\n");
 }
 
 function fallbackTurn(
@@ -186,7 +188,9 @@ async function generateAgentContent(
 export async function* runMaintenanceAgentsStream(
   question: string,
   selectedAgents?: AgentCode[],
-  history?: ConversationHistoryEntry[]
+  history?: ConversationHistoryEntry[],
+  model?: string,
+  indexName?: string
 ): AsyncGenerator<StreamEvent, void, unknown> {
   const normalizedQuestion = question.trim();
   const selectedAgentSet =
@@ -198,17 +202,53 @@ export async function* runMaintenanceAgentsStream(
     selectedAgentSet !== null && selectedAgentSet.size < agentProfiles.length;
 
   const turns: AgentTurn[] = [];
-  const corpusChunks = await listReferenceChunks();
+
+  // Generate query embedding using Ollama once for all agents
+  let queryEmbedding: number[] | null = null;
+  try {
+    const embeddings = await generateOllamaEmbeddings(normalizedQuestion, model);
+    if (embeddings && embeddings.length > 0) {
+      queryEmbedding = embeddings[0];
+    }
+  } catch (error) {
+    console.warn("Failed to generate query embedding using Ollama, falling back to lexical search.", error);
+  }
+
+  // Only list Appwrite chunks if Ollama query embedding failed
+  let corpusChunks: ReferenceChunk[] | null = null;
+  if (!queryEmbedding) {
+    corpusChunks = await listReferenceChunks();
+  }
 
   for (const agent of activeProfiles) {
     yield { type: "agent_start", agent: agent.code };
 
-    let evidence = retrieveChunks(
-      corpusChunks,
-      normalizedQuestion,
-      domainsForAgent(agent),
-      3
-    );
+    let evidence: ReferenceChunk[] = [];
+
+    if (queryEmbedding) {
+      try {
+        evidence = await queryDocumentChunks(
+          queryEmbedding,
+          domainsForAgent(agent),
+          3,
+          indexName
+        );
+      } catch (error) {
+        console.warn(`Pinecone query failed for agent ${agent.code}, falling back to lexical search`, error);
+      }
+    }
+
+    if (evidence.length === 0) {
+      if (!corpusChunks) {
+        corpusChunks = await listReferenceChunks();
+      }
+      evidence = retrieveChunks(
+        corpusChunks,
+        normalizedQuestion,
+        domainsForAgent(agent),
+        3
+      );
+    }
     let content: string | null = null;
     let usedWebFallback = false;
 

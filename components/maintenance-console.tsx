@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef } from "react";
 import {
   Database,
   FileText,
@@ -98,15 +98,6 @@ export function MaintenanceConsole({ agents }: MaintenanceConsoleProps) {
       setLoadingDocuments(false);
     }
   }
-
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setMounted(true);
-    }, 0);
-    return () => clearTimeout(timer);
-  }, []);
 
   const selectedAgentSet = useMemo(() => new Set(agents.map((agent) => agent.code)), [agents]);
 
@@ -322,16 +313,6 @@ export function MaintenanceConsole({ agents }: MaintenanceConsoleProps) {
     setQuestion(sampleQuestions[0]);
   }
 
-  if (!mounted) {
-    return (
-      <main className="hairline-grid min-h-screen px-4 py-5 text-platinum sm:px-6 lg:px-8 flex items-center justify-center bg-[#0d0f12]">
-        <div className="text-center bg-black/35 border border-white/10 p-8 rounded-xl max-w-sm">
-          <Loader2 className="size-8 animate-spin text-signal mx-auto mb-4" />
-          <p className="text-sm font-mono text-muted">Yukleniyor...</p>
-        </div>
-      </main>
-    );
-  }
 
   return (
     <main className="hairline-grid min-h-screen px-4 py-5 text-platinum sm:px-6 lg:px-8">
@@ -541,6 +522,7 @@ export function MaintenanceConsole({ agents }: MaintenanceConsoleProps) {
               className="mt-3 cursor-pointer border border-dashed border-white/20 hover:border-signal/50 bg-black/20 hover:bg-black/35 rounded-lg p-5 text-center transition flex flex-col items-center justify-center gap-2 group"
             >
               <input
+                suppressHydrationWarning
                 ref={fileInputRef}
                 type="file"
                 accept=".pdf,.epub,.txt,.md"

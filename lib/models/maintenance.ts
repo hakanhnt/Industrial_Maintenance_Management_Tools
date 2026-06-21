@@ -114,6 +114,7 @@ export interface AskResponse {
     title: string;
     locationLabel: string;
   }>;
+  suggestions: string[];
 }
 
 export type StreamEvent =
@@ -124,5 +125,6 @@ export type StreamEvent =
       status: EvidenceStatus;
       executiveSummary: string;
       citations: AskResponse["citations"];
+      suggestions: string[];
     }
   | { type: "error"; message: string };

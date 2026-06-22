@@ -229,6 +229,41 @@ export async function generateMiniMaxLeadSynthesis(
   return requestMiniMaxCompletion(systemPrompt, userPrompt);
 }
 
+export async function generateMiniMaxSuggestions(
+  question: string,
+  leadAnswer: string
+): Promise<string[]> {
+  const systemPrompt =
+    "Sen bir endüstriyel bakım yönetimi asistanısın. Kullanıcının öğrenmesine yardımcı olmak için konuyla ilgili takip soruları öneriyorsun.";
+  const userPrompt = [
+    `Kullanıcı şu soruyu sordu: "${question}"`,
+    ``,
+    `Uzman şöyle yanıtladı: "${leadAnswer.slice(0, 800)}"`,
+    ``,
+    `Bu konuyla ilgili, kullanıcının sormak isteyebileceği 3 kısa Türkçe soru üret.`,
+    `Sadece JSON array döndür, başka hiçbir şey yazma.`,
+    `Örnek: ["Soru 1?", "Soru 2?", "Soru 3?"]`
+  ].join("\n");
+
+  const result = await requestMiniMaxCompletion(systemPrompt, userPrompt);
+  if (!result) return [];
+
+  try {
+    const jsonMatch = result.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return [];
+    const parsed: unknown = JSON.parse(jsonMatch[0]);
+    if (
+      Array.isArray(parsed) &&
+      parsed.every((item): item is string => typeof item === "string")
+    ) {
+      return parsed.slice(0, 3);
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 export interface GenerateMiniMaxRAGResponseInput {
   question: string;
   evidence: ReferenceChunk[];

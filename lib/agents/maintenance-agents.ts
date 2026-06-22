@@ -1,5 +1,9 @@
 import { agentProfiles, leadAgentProfile } from "@/lib/agents/profiles";
-import { generateMiniMaxAgentTurn, generateMiniMaxLeadSynthesis } from "@/lib/agents/minimax";
+import {
+  generateMiniMaxAgentTurn,
+  generateMiniMaxLeadSynthesis,
+  generateMiniMaxSuggestions
+} from "@/lib/agents/minimax";
 import { retrieveChunks } from "@/lib/knowledge/reference-corpus";
 import { searchWebEvidence } from "@/lib/knowledge/web-search";
 import { listReferenceChunks } from "@/lib/appwrite/reference-repository";
@@ -387,10 +391,16 @@ export async function* runMaintenanceAgentsStream(
   turns.push(leadTurn);
   yield { type: "agent_turn", turn: leadTurn };
 
+  const suggestions = await generateMiniMaxSuggestions(
+    normalizedQuestion,
+    leadTurn.content
+  ).catch(() => [] as string[]);
+
   yield {
     type: "final",
     status,
     executiveSummary: "",
-    citations: []
+    citations: [],
+    suggestions
   };
 }

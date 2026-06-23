@@ -1,3 +1,4 @@
+
 # Yönetici (LEAD) Ajan — Yanıt Sentezi
 
 ## Amaç

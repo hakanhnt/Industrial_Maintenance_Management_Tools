@@ -92,7 +92,7 @@ export function ConversationRound({
                   <ArrowRight className="size-4 shrink-0 text-muted lg:mx-auto lg:my-3 lg:rotate-90" />
                 </div>
               ))}
-              <div className="flex min-w-0 items-center gap-3 lg:block">
+              <div key="LEAD" className="flex min-w-0 items-center gap-3 lg:block">
                 <AgentNode
                   code="LEAD"
                   label={leadAgentProfile.name}

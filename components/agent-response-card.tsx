@@ -1,6 +1,7 @@
 "use client";
 
-import { GitBranch, MessageSquareText } from "lucide-react";
+import { useState } from "react";
+import { GitBranch, MessageSquareText, FileText, ChevronDown, ChevronUp, Tag } from "lucide-react";
 import type { AgentTurn } from "@/lib/models/maintenance";
 import { StatusPill } from "@/components/status-pill";
 
@@ -9,6 +10,8 @@ interface AgentResponseCardProps {
 }
 
 export function AgentResponseCard({ turn }: AgentResponseCardProps) {
+  const [showEvidence, setShowEvidence] = useState(false);
+
   if (turn.status === "skipped") {
     return null;
   }
@@ -59,6 +62,71 @@ export function AgentResponseCard({ turn }: AgentResponseCardProps) {
               <p className="mt-3 text-sm text-platinum">{suggestion}</p>
             </div>
           ))}
+        </div>
+      )}
+
+      {turn.evidence && turn.evidence.length > 0 && (
+        <div className="mt-5 border-t border-white/10 pt-4">
+          <button
+            type="button"
+            onClick={() => setShowEvidence(!showEvidence)}
+            className="flex items-center justify-between w-full text-xs font-mono uppercase tracking-[0.16em] text-muted hover:text-platinum transition"
+          >
+            <span className="flex items-center gap-2">
+              <FileText className="size-3.5 text-signal" />
+              Kullanılan Kaynaklar ({turn.evidence.length})
+            </span>
+            {showEvidence ? (
+              <ChevronUp className="size-3.5" />
+            ) : (
+              <ChevronDown className="size-3.5" />
+            )}
+          </button>
+
+          {showEvidence && (
+            <div className="mt-4 space-y-3.5">
+              {turn.evidence.map((chunk, idx) => (
+                <div
+                  key={chunk.id || idx}
+                  className="rounded-lg border border-white/5 bg-black/35 p-3.5 space-y-2.5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-xs text-platinum font-semibold truncate" title={chunk.title}>
+                        {chunk.title}
+                      </div>
+                      {chunk.locationLabel && (
+                        <div className="text-[10px] text-muted mt-0.5">
+                          {chunk.locationLabel}
+                        </div>
+                      )}
+                    </div>
+                    <span className="font-mono text-[9px] uppercase tracking-wider px-2 py-0.5 rounded border border-white/10 bg-white/[0.02] text-muted">
+                      {chunk.domain}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] leading-5 text-muted bg-black/20 border border-white/[0.02] p-2.5 rounded font-mono select-all max-h-32 overflow-y-auto whitespace-pre-wrap">
+                    {chunk.text}
+                  </p>
+
+                  {chunk.keywords && chunk.keywords.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1 border-t border-white/5">
+                      {chunk.keywords.map((kw) => (
+                        <span
+                          key={kw}
+                          className="flex items-center gap-1 font-mono text-[9px] text-cyanline bg-cyanline/5 px-2 py-0.5 rounded"
+                        >
+                          <Tag className="size-2" />
+                          {kw}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

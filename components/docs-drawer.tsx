@@ -32,7 +32,7 @@ interface DocsDrawerProps {
   documentListError: string | null;
   onFetchDocuments: () => void;
   lastDimension: number | null;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
 }
 
 export function DocsDrawer({

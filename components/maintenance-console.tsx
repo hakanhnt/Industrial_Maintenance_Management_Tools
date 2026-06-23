@@ -50,7 +50,8 @@ function emptyRound(question: string): AskResponse {
     status: "insufficient_sources",
     executiveSummary: "",
     turns: [],
-    citations: []
+    citations: [],
+    suggestions: []
   };
 }
 

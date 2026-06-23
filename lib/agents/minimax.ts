@@ -249,7 +249,7 @@ export async function generateMiniMaxSuggestions(
   if (!result) return [];
 
   try {
-    const jsonMatch = result.match(/\[[\s\S]*\]/);
+    const jsonMatch = result.match(/\[[\s\S]*?\]/);
     if (!jsonMatch) return [];
     const parsed: unknown = JSON.parse(jsonMatch[0]);
     if (

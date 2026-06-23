@@ -391,10 +391,12 @@ export async function* runMaintenanceAgentsStream(
   turns.push(leadTurn);
   yield { type: "agent_turn", turn: leadTurn };
 
-  const suggestions = await generateMiniMaxSuggestions(
-    normalizedQuestion,
-    leadTurn.content
-  ).catch(() => [] as string[]);
+  const suggestions =
+    leadTurn.status !== "skipped"
+      ? await generateMiniMaxSuggestions(normalizedQuestion, leadTurn.content).catch(
+          () => [] as string[]
+        )
+      : [];
 
   yield {
     type: "final",

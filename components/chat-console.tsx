@@ -130,18 +130,24 @@ export function ChatConsole({ agents }: ChatConsoleProps) {
       const decoder = new TextDecoder();
       let buffer = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          handleStreamEvent(JSON.parse(line) as StreamEvent);
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            handleStreamEvent(JSON.parse(line) as StreamEvent);
+          }
         }
+        if (buffer.trim()) handleStreamEvent(JSON.parse(buffer) as StreamEvent);
+      } catch (caughtError) {
+        setError(caughtError instanceof Error ? caughtError.message : "Bilinmeyen hata.");
+        dropLastRoundIfEmpty();
+        reader.cancel().catch(() => {});
       }
-      if (buffer.trim()) handleStreamEvent(JSON.parse(buffer) as StreamEvent);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Bilinmeyen hata.");
       dropLastRoundIfEmpty();
